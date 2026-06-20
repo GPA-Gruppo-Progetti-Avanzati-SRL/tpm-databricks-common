@@ -1,6 +1,6 @@
-module tpm-databricks-common
+module github.com/GPA-Gruppo-Progetti-Avanzati-SRL/tpm-databricks-common
 
-go 1.26
+go 1.26.4
 
 require (
 	github.com/databricks/databricks-sdk-go v0.147.0
