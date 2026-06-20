@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 
 	"github.com/databricks/databricks-sdk-go/service/sql"
@@ -18,6 +19,12 @@ type ResultSet struct {
 
 func (lks *LinkedService) Find(ctx context.Context, query string, mustFind bool) (ResultSet, error) {
 	const semLogContext = "databricks-linked-service::find"
+
+	query, err := lks.resolveQuery(query)
+	if err != nil {
+		log.Error().Err(err).Msg(semLogContext)
+		return ResultSet{}, err
+	}
 
 	resp, err := lks.w.StatementExecution.ExecuteAndWait(ctx, sql.ExecuteStatementRequest{
 		WarehouseId: lks.cfg.WarehouseID,
@@ -75,6 +82,34 @@ func (lks *LinkedService) Find(ctx context.Context, query string, mustFind bool)
 	}
 
 	return rs, nil
+}
+
+var resourcePattern = regexp.MustCompile(`\[dbrks:([^\]]+)\]`)
+
+func (lks *LinkedService) resolveQuery(query string) (string, error) {
+	const semLogContext = "databricks-linked-service::resolve-query"
+
+	var resolveErr error
+	resolved := resourcePattern.ReplaceAllStringFunc(query, func(match string) string {
+		if resolveErr != nil {
+			return match
+		}
+		resourceId := resourcePattern.FindStringSubmatch(match)[1]
+		for _, r := range lks.cfg.Resources {
+			if r.Id == resourceId {
+				return r.Name
+			}
+		}
+		resolveErr = fmt.Errorf("resource %q not found in config", resourceId)
+		log.Error().Err(resolveErr).Msg(semLogContext)
+		return match
+	})
+
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+
+	return resolved, nil
 }
 
 func parseRows(cols []sql.ColumnInfo, rows [][]string) ([]map[string]interface{}, error) {
