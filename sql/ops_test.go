@@ -33,12 +33,12 @@ func TestOps(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	b, err := sql.JsonFind(context.Background(), lks[0], "SHOW TABLES IN [dbrks:smart-catalog]")
+	opr, b, err := sql.JsonFind(context.Background(), lks[0], "SHOW TABLES IN [dbrks:smart-catalog]")
 	require.NoError(t, err)
-	t.Log(string(b))
+	t.Log(opr, string(b))
 
-	b, err = sql.JsonFindOne(context.Background(), lks[0], "SHOW TABLES IN [dbrks:smart-catalog]", true)
+	opr, b, err = sql.JsonFindOne(context.Background(), lks[0], "SHOW TABLES IN [dbrks:smart-catalog]")
 	require.NoError(t, err)
-	t.Log(string(b))
+	t.Log(opr, string(b))
 
 }

@@ -27,6 +27,7 @@ func NewLinkedServiceWithConfig(cfg Config) (*LinkedService, error) {
 	switch cfg.AuthType {
 	case AuthTypeAzureClientSecret:
 		w, err = databricks.NewWorkspaceClient(&databricks.Config{
+			AuthType:          string(cfg.AuthType),
 			Host:              cfg.Host,
 			AzureClientID:     cfg.ServicePrincipal.ClientID,
 			AzureClientSecret: cfg.ServicePrincipal.ClientSecret,
