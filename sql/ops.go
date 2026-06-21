@@ -15,18 +15,32 @@ const (
 	FindOneOperation DatabricksSQLOperationType = "sql-find-one"
 )
 
-func ExecuteOperation(ctx context.Context, lks *dbricksLks.LinkedService, opType DatabricksSQLOperationType, stmt string, mustFind bool) ([]byte, error) {
+type Operation struct {
+	Text     string
+	MustFind bool
+	Type     DatabricksSQLOperationType
+}
+
+func NewOperation(operationType DatabricksSQLOperationType, text string, mustFind bool) (*Operation, error) {
+	return &Operation{
+		Text:     text,
+		MustFind: mustFind,
+		Type:     operationType,
+	}, nil
+}
+
+func (op *Operation) Execute(ctx context.Context, lks *dbricksLks.LinkedService) ([]byte, error) {
 	const semLogContext = "databricks::sql-operation"
 	var err error
 	var b []byte
 
-	switch opType {
+	switch op.Type {
 	case FindOperation:
-		b, err = JsonFind(ctx, lks, stmt)
+		b, err = JsonFind(ctx, lks, op.Text)
 	case FindOneOperation:
-		b, err = JsonFindOne(ctx, lks, stmt, mustFind)
+		b, err = JsonFindOne(ctx, lks, op.Text, op.MustFind)
 	default:
-		err = errors.New("invalid op type: " + string(opType))
+		err = errors.New("invalid op type: " + string(op.Type))
 	}
 
 	if err != nil {
