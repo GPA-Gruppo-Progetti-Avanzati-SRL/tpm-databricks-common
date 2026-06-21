@@ -1,33 +1,63 @@
-package dbricksLks
+package sql
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 
+	"github.com/GPA-Gruppo-Progetti-Avanzati-SRL/tpm-databricks-common/dbricksLks"
 	"github.com/databricks/databricks-sdk-go/service/sql"
 	"github.com/rs/zerolog/log"
 )
 
-type ResultSet struct {
-	Columns []sql.ColumnInfo
-	Rows    []map[string]interface{}
+type Row map[string]interface{}
+
+func (r Row) ToJson() ([]byte, error) {
+	return json.Marshal(r)
 }
 
-func (lks *LinkedService) Find(ctx context.Context, query string, mustFind bool) (ResultSet, error) {
+type ResultSet struct {
+	Columns []sql.ColumnInfo
+	Rows    []Row
+}
+
+func (rs ResultSet) ToJson() ([]byte, error) {
+	const semLogContext = "sql-result-set::json"
+
+	var sb bytes.Buffer
+	sb.WriteString("[")
+	for i, r := range rs.Rows {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+
+		b, err := json.Marshal(r)
+		if err != nil {
+			log.Error().Err(err).Msg(semLogContext)
+			return nil, err
+		}
+
+		sb.Write(b)
+	}
+
+	sb.WriteString("]")
+	return sb.Bytes(), nil
+}
+
+func Find(ctx context.Context, lks *dbricksLks.LinkedService, query string, mustFind bool) (ResultSet, error) {
 	const semLogContext = "databricks-linked-service::find"
 
-	query, err := lks.resolveQuery(query)
+	query, err := lks.ResolveQuery(query)
 	if err != nil {
 		log.Error().Err(err).Msg(semLogContext)
 		return ResultSet{}, err
 	}
 
-	resp, err := lks.w.StatementExecution.ExecuteAndWait(ctx, sql.ExecuteStatementRequest{
-		WarehouseId: lks.cfg.WarehouseID,
+	resp, err := lks.W.StatementExecution.ExecuteAndWait(ctx, sql.ExecuteStatementRequest{
+		WarehouseId: lks.Cfg.WarehouseID,
 		Statement:   query,
 	})
 
@@ -61,7 +91,7 @@ func (lks *LinkedService) Find(ctx context.Context, query string, mustFind bool)
 	log.Info().Str("chunk", fmt.Sprintf("%d/%d", 1, totalChunks)).Int("rows", len(rows)).Int("total-rows", len(rs.Rows)).Msg(semLogContext)
 
 	for chunkIdx := 1; chunkIdx < totalChunks; chunkIdx++ {
-		chunk, err := lks.w.StatementExecution.GetStatementResultChunkN(ctx, sql.GetStatementResultChunkNRequest{
+		chunk, err := lks.W.StatementExecution.GetStatementResultChunkN(ctx, sql.GetStatementResultChunkNRequest{
 			StatementId: resp.StatementId,
 			ChunkIndex:  chunkIdx,
 		})
@@ -84,38 +114,10 @@ func (lks *LinkedService) Find(ctx context.Context, query string, mustFind bool)
 	return rs, nil
 }
 
-var resourcePattern = regexp.MustCompile(`\[dbrks:([^\]]+)\]`)
-
-func (lks *LinkedService) resolveQuery(query string) (string, error) {
-	const semLogContext = "databricks-linked-service::resolve-query"
-
-	var resolveErr error
-	resolved := resourcePattern.ReplaceAllStringFunc(query, func(match string) string {
-		if resolveErr != nil {
-			return match
-		}
-		resourceId := resourcePattern.FindStringSubmatch(match)[1]
-		for _, r := range lks.cfg.Resources {
-			if r.Id == resourceId {
-				return r.Name
-			}
-		}
-		resolveErr = fmt.Errorf("resource %q not found in config", resourceId)
-		log.Error().Err(resolveErr).Msg(semLogContext)
-		return match
-	})
-
-	if resolveErr != nil {
-		return "", resolveErr
-	}
-
-	return resolved, nil
-}
-
-func parseRows(cols []sql.ColumnInfo, rows [][]string) ([]map[string]interface{}, error) {
+func parseRows(cols []sql.ColumnInfo, rows [][]string) ([]Row, error) {
 	const semLogContext = "databricks-linked-service::parse-rows"
 
-	var resultSet []map[string]interface{}
+	var resultSet []Row
 	for _, row := range rows {
 		parsedRow, err := parseRow(cols, row)
 		if err != nil {
@@ -134,10 +136,10 @@ func parseRows(cols []sql.ColumnInfo, rows [][]string) ([]map[string]interface{}
 // STRUCT columns are JSON-deserialized into interface{}. Everything else is
 // left as a string. An empty string is treated as SQL NULL and mapped to nil
 // for all non-string types.
-func parseRow(cols []sql.ColumnInfo, row []string) (map[string]interface{}, error) {
+func parseRow(cols []sql.ColumnInfo, row []string) (Row, error) {
 	const semLogContext = "databricks-linked-service::parse-row"
 
-	rec := make(map[string]interface{}, len(cols))
+	rec := make(Row, len(cols))
 	for i, col := range cols {
 		if i >= len(row) {
 			break

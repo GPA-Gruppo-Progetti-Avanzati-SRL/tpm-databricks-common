@@ -50,3 +50,20 @@ The `id` is the short alias used inside queries; `name` is the actual Databricks
 }
 ```
 
+```yaml
+name: my-databricks-connection
+host: https://<workspace-id>.azuredatabricks.net
+workspace-resource-id: /subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Databricks/workspaces/<ws>
+auth-type: azure-client-secret
+service-principal:
+  tenant-id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  client-id: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  client-secret: your-client-secret
+warehouse-id: xxxxxxxxxxxx
+catalog-resources:
+  - id: main
+    name: Main Catalog
+  - id: hive_metastore
+    name: Legacy Hive
+```
+

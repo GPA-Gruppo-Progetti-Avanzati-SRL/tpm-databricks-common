@@ -42,7 +42,7 @@ func Initialize(cfgs []Config) (LinkedServices, error) {
 func GetLinkedService(name string) (*LinkedService, error) {
 	const semLogContext = "databricks-registry::get-lks"
 	for _, stg := range theRegistry {
-		if stg.cfg.Name == name {
+		if stg.Cfg.Name == name {
 			return stg, nil
 		}
 	}

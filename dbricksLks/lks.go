@@ -3,14 +3,15 @@ package dbricksLks
 import (
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/databricks/databricks-sdk-go"
 	"github.com/rs/zerolog/log"
 )
 
 type LinkedService struct {
-	cfg Config
-	w   *databricks.WorkspaceClient
+	Cfg Config
+	W   *databricks.WorkspaceClient
 }
 
 func NewLinkedServiceWithConfig(cfg Config) (*LinkedService, error) {
@@ -41,7 +42,7 @@ func NewLinkedServiceWithConfig(cfg Config) (*LinkedService, error) {
 		return nil, err
 	}
 
-	lks := &LinkedService{cfg: cfg, w: w}
+	lks := &LinkedService{Cfg: cfg, W: w}
 	return lks, nil
 }
 
@@ -53,4 +54,32 @@ func NewLinkedService(name string, opts ...Option) (*LinkedService, error) {
 	}
 
 	return NewLinkedServiceWithConfig(cfg)
+}
+
+var resourcePattern = regexp.MustCompile(`\[dbrks:([^\]]+)\]`)
+
+func (lks *LinkedService) ResolveQuery(query string) (string, error) {
+	const semLogContext = "databricks-linked-service::resolve-query"
+
+	var resolveErr error
+	resolved := resourcePattern.ReplaceAllStringFunc(query, func(match string) string {
+		if resolveErr != nil {
+			return match
+		}
+		resourceId := resourcePattern.FindStringSubmatch(match)[1]
+		for _, r := range lks.Cfg.Resources {
+			if r.Id == resourceId {
+				return r.Name
+			}
+		}
+		resolveErr = fmt.Errorf("resource %q not found in config", resourceId)
+		log.Error().Err(resolveErr).Msg(semLogContext)
+		return match
+	})
+
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+
+	return resolved, nil
 }
