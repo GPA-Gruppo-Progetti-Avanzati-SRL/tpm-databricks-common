@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 
 	"github.com/GPA-Gruppo-Progetti-Avanzati-SRL/tpm-databricks-common/dbricksLks"
 	"github.com/rs/zerolog/log"
@@ -17,9 +18,9 @@ const (
 )
 
 type Operation struct {
-	Text     string
-	MustFind bool
-	Type     DatabricksSQLOperationType
+	Text     string                     `json:"text,omitempty" yaml:"text,omitempty"`
+	MustFind bool                       `json:"must-find,omitempty" yaml:"must-find,omitempty"`
+	Type     DatabricksSQLOperationType `json:"type,omitempty" yaml:"type,omitempty"`
 }
 
 func (op *Operation) ToJsonString() string {
@@ -31,6 +32,11 @@ func (op *Operation) ToJsonString() string {
 	return string(b)
 }
 
+type OperationResult struct {
+	StatusCode   int `json:"status-code,omitempty" yaml:"status-code,omitempty"`
+	MatchedCOunt int `json:"matched-count,omitempty" yaml:"matched-count,omitempty"`
+}
+
 func NewOperation(operationType DatabricksSQLOperationType, text string, mustFind bool) (*Operation, error) {
 	return &Operation{
 		Text:     text,
@@ -39,16 +45,17 @@ func NewOperation(operationType DatabricksSQLOperationType, text string, mustFin
 	}, nil
 }
 
-func (op *Operation) Execute(ctx context.Context, lks *dbricksLks.LinkedService) ([]byte, error) {
+func (op *Operation) Execute(ctx context.Context, lks *dbricksLks.LinkedService) (OperationResult, []byte, error) {
 	const semLogContext = "databricks::sql-operation"
 	var err error
 	var b []byte
+	opResult := OperationResult{StatusCode: http.StatusInternalServerError}
 
 	switch op.Type {
 	case FindOperation:
-		b, err = JsonFind(ctx, lks, op.Text)
+		opResult, b, err = JsonFind(ctx, lks, op.Text)
 	case FindOneOperation:
-		b, err = JsonFindOne(ctx, lks, op.Text, op.MustFind)
+		opResult, b, err = JsonFindOne(ctx, lks, op.Text)
 	default:
 		err = errors.New("invalid op type: " + string(op.Type))
 	}
@@ -57,27 +64,37 @@ func (op *Operation) Execute(ctx context.Context, lks *dbricksLks.LinkedService)
 		log.Error().Err(err).Msg(semLogContext)
 	}
 
-	return b, err
+	return opResult, b, err
 }
 
-func JsonFind(ctx context.Context, lks *dbricksLks.LinkedService, query string) ([]byte, error) {
+func JsonFind(ctx context.Context, lks *dbricksLks.LinkedService, query string) (OperationResult, []byte, error) {
 	rs, err := Find(ctx, lks, query, false)
 	if err != nil {
-		return nil, err
+		return OperationResult{StatusCode: http.StatusInternalServerError}, nil, err
 	}
 
-	return rs.ToJson()
+	j, err := rs.ToJson()
+	if err != nil {
+		return OperationResult{StatusCode: http.StatusInternalServerError}, nil, err
+	}
+
+	return OperationResult{StatusCode: http.StatusOK}, j, nil
 }
 
-func JsonFindOne(ctx context.Context, lks *dbricksLks.LinkedService, query string, mustFind bool) ([]byte, error) {
-	rs, err := Find(ctx, lks, query, mustFind)
+func JsonFindOne(ctx context.Context, lks *dbricksLks.LinkedService, query string) (OperationResult, []byte, error) {
+	rs, err := Find(ctx, lks, query, false)
 	if err != nil {
-		return nil, err
+		return OperationResult{StatusCode: http.StatusInternalServerError}, nil, err
 	}
 
 	if len(rs.Rows) == 0 {
-		return []byte(`{}`), nil
+		return OperationResult{StatusCode: http.StatusNotFound}, []byte(`{}`), errors.New("no rows found")
 	}
 
-	return rs.Rows[0].ToJson()
+	j, err := rs.Rows[0].ToJson()
+	if err != nil {
+		return OperationResult{StatusCode: http.StatusInternalServerError}, nil, err
+	}
+
+	return OperationResult{StatusCode: http.StatusOK}, j, nil
 }
