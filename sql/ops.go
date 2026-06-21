@@ -2,6 +2,7 @@ package sql
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/GPA-Gruppo-Progetti-Avanzati-SRL/tpm-databricks-common/dbricksLks"
@@ -19,6 +20,15 @@ type Operation struct {
 	Text     string
 	MustFind bool
 	Type     DatabricksSQLOperationType
+}
+
+func (op *Operation) ToJsonString() string {
+	b, err := json.Marshal(op)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to marshal operation")
+	}
+
+	return string(b)
 }
 
 func NewOperation(operationType DatabricksSQLOperationType, text string, mustFind bool) (*Operation, error) {
